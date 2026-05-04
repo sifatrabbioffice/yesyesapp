@@ -1,8 +1,9 @@
-name: Build EXE and IPA
+Name: Build EXE and IPA
 
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ] # Trigger on version tags
   pull_request:
     branches: [ main ]
 
@@ -10,87 +11,88 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        cache: 'pip'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install pyinstaller -r requirements.txt
 
-    - name: Build EXE with PyInstaller
+    - name: Build EXE
       run: |
         pyinstaller --onefile --windowed --name "YesYesApp" app.py
 
-    - name: Upload EXE artifact
-      uses: actions/upload-artifact@v6
+    - name: Upload EXE
+      uses: actions/upload-artifact@v4
       with:
         name: windows-exe
         path: dist/YesYesApp.exe
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        files: dist/YesYesApp.exe
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build-ios:
-    runs-on: macos-latest
+    runs-on: macos-14 # Using M1 runners for faster builds
     steps:
-    - uses: actions/checkout@v6  # ← was v4, now fixed
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        cache: 'pip'
 
-    - name: Install Xcode tools
-      run: xcode-select --install || true
-
-    - name: Install dependencies
+    - name: Install Briefcase
       run: |
         python -m pip install --upgrade pip
         pip install briefcase
-        pip install -r requirements.txt
 
-    - name: Create iOS project with Briefcase
-      run: briefcase create iOS
-
-    - name: Build iOS app with Briefcase
-      run: briefcase build iOS
-
-    - name: Package IPA (unsigned, ready for sideloading)
+    - name: Briefcase Create & Build
       run: |
-        # Briefcase outputs to build/yesyesapp/ios/xcode/
-        # Find the .app bundle Briefcase produced
-        APP_PATH=$(find build -name "*.app" -type d | head -1)
-        echo "Found app at: $APP_PATH"
+        # --no-input bypasses prompts in CI
+        briefcase create iOS --no-input
+        briefcase build iOS --no-input
 
-        # Create proper iOS IPA structure: Payload/<AppName>.app
+    - name: Package Unsigned IPA
+      run: |
+        # Briefcase typically places the .app in a specific directory structure
+        # based on the bundle and project name from pyproject.toml
         mkdir -p Payload
-        cp -r "$APP_PATH" Payload/
-
-        # Zip into IPA
-        zip -r YesYesApp.ipa Payload/
-        echo "IPA created successfully"
-        ls -lh YesYesApp.ipa
-
-    - name: Upload IPA artifact
-      uses: actions/upload-artifact@v6
+        APP_DIR=$(find build/yesyesapp/ios/xcode -name "*.app" -type d | head -n 1)
+        
+        if [ -z "$APP_DIR" ]; then
+          echo "Error: .app bundle not found."
+          exit 1
+        fi
+        
+        cp -R "$APP_DIR" Payload/
+        zip -r YesYesApp.ipa Payload
+        
+    - name: Upload IPA
+      uses: actions/upload-artifact@v4
       with:
         name: ios-ipa
         path: YesYesApp.ipa
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
+  release:
+    needs: [build-windows, build-ios]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v4
       with:
-        files: YesYesApp.ipa
+        path: artifacts
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          artifacts/windows-exe/YesYesApp.exe
+          artifacts/ios-ipa/YesYesApp.ipa
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
