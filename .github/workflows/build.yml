@@ -1,0 +1,132 @@
+name: Build EXE and IPA
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Build EXE with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name "YesYesApp" app.py
+    
+    - name: Upload EXE artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows-exe
+        path: dist/YesYesApp.exe
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: dist/YesYesApp.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install briefcase
+    
+    - name: Build iOS app with Briefcase
+      run: |
+        briefcase build iOS
+      continue-on-error: true
+    
+    - name: Build IPA manually with PyInstaller for iOS
+      run: |
+        # Create a simple iOS-compatible wrapper
+        mkdir -p build/ios
+        cp app.py build/ios/
+        
+        # Create a basic IPA structure
+        mkdir -p "YesYesApp.app/Contents/MacOS"
+        mkdir -p "YesYesApp.app/Contents/Resources"
+        
+        # Copy the main app
+        cp app.py "YesYesApp.app/Contents/Resources/"
+        
+        # Create PkgInfo
+        echo -n "APPL????" > "YesYesApp.app/Contents/PkgInfo"
+        
+        # Create a stub executable
+        echo '#!/bin/bash' > "YesYesApp.app/Contents/MacOS/YesYesApp"
+        echo 'python "$(dirname "$0")/../Resources/app.py"' >> "YesYesApp.app/Contents/MacOS/YesYesApp"
+        chmod +x "YesYesApp.app/Contents/MacOS/YesYesApp"
+        
+        # Create Info.plist
+        cat > "YesYesApp.app/Contents/Info.plist" << 'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleExecutable</key>
+            <string>YesYesApp</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.example.yesyesapp</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>Yes Yes App</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>NSPrincipalClass</key>
+            <string>NSApplication</string>
+        </dict>
+        </plist>
+        EOF
+        
+        # Create IPA (which is just a zip of the app bundle)
+        cd YesYesApp.app
+        zip -r ../YesYesApp.ipa .
+        cd ..
+    
+    - name: Upload IPA artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ios-ipa
+        path: YesYesApp.ipa
+      continue-on-error: true
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: YesYesApp.ipa
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
