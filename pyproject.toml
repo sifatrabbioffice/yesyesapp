@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yesyesapp"
+version = "1.0.0"
+description = "Yes Yes Click App"
+authors = [{name = "sifatrabbioffice", email = "sifat@example.com"}]
+
+[tool.briefcase]
+project_name = "Yes Yes App"
+bundle = "com.example"
+version = "1.0.0"
+description = "Click to start game app"
+sources = ["src"]
+
+[tool.briefcase.app.yesyesapp]
+formal_name = "Yes Yes App"
+description = "Click game app"
+bundle = "com.yesyesapp"
+url = "https://github.com/sifatrabbioffice/yesyesapp"
+author = "sifatrabbioffice"
+author_email = "sifat@example.com"
+
+[tool.briefcase.app.yesyesapp.windows]
+requires = ["pygame>=2.1.0"]
+
+[tool.briefcase.app.yesyesapp.iOS]
+requires = ["pygame>=2.1.0"]
+supported_os_versions = "13.0+"
